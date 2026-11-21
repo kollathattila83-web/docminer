@@ -1,0 +1,57 @@
+# Helyi futtatás: cp .env.example .env && docker compose up --build
+# DocMiner API: http://localhost:8000/docs   DocMaster: http://localhost:8501
+# Több feldolgozó: docker compose up --scale worker=3
+
+x-docminer-env: &docminer-env
+  DOCMINER_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-docminer}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-docminer}
+  DOCMINER_DATA_DIR: /data
+  DOCMINER_MAX_UPLOAD_MB: ${DOCMINER_MAX_UPLOAD_MB:-100}
+  DOCMINER_WORKER_POLL_SECONDS: ${DOCMINER_WORKER_POLL_SECONDS:-2}
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-docminer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-docminer}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    environment: *docminer-env
+    volumes:
+      - docdata:/data
+      - ./config:/app/config:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db: {condition: service_healthy}
+
+  worker:
+    build: .
+    command: ["python", "-m", "docminer.worker"]
+    environment: *docminer-env
+    volumes:
+      - docdata:/data
+      - ./config:/app/config:ro
+    depends_on:
+      db: {condition: service_healthy}
+
+  docmaster:
+    build: ./docmaster
+    environment:
+      DOCMINER_API_URL: http://api:8000
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  docdata:

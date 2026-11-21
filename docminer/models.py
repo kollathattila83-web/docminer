@@ -31,6 +31,14 @@ class DocStatus(StrEnum):
     FAILED = "failed"
 
 
+class TypeStatus(StrEnum):
+    """Az irattípus állapota. A gép javasol, ember dönt."""
+
+    SUGGESTED = "suggested"  # a DocSorter javasolta, emberi jóváhagyásra vár
+    APPROVED = "approved"  # az ember elfogadta a javaslatot
+    CORRECTED = "corrected"  # az ember más típust választott
+
+
 class StepStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
@@ -52,6 +60,14 @@ class Document(Base):
     # Ki dolgozik rajta éppen (worker azonosító), és mióta.
     locked_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Irattípus: a DocSorter javaslata és az ember döntése külön mezőben, hogy mérhető legyen a pontosság.
+    suggested_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    suggested_confidence: Mapped[float | None] = mapped_column(nullable=True)
+    suggested_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    doc_type: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    type_status: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now

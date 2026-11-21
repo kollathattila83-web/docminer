@@ -8,6 +8,7 @@ Mappaszerkezet iratonként (ez egyben az AI-ready csomag):
     documents/<id>/text/page-0001.txt      oldal szövege
     documents/<id>/text/page-0001.json     szavak, blokkok, táblák koordinátákkal
     documents/<id>/manifest.json
+    training/doctype/<id>.json            jóváhagyott irattípus-tanítópélda
 """
 
 from __future__ import annotations
@@ -78,3 +79,13 @@ class LocalStorage:
     @classmethod
     def manifest_key(cls, doc_id: str) -> str:
         return f"{cls.doc_prefix(doc_id)}/manifest.json"
+
+    @staticmethod
+    def training_doctype_key(doc_id: str) -> str:
+        return f"training/doctype/{doc_id}.json"
+
+    def list_keys(self, prefix: str) -> list[str]:
+        base = self.path(prefix)
+        if not base.is_dir():
+            return []
+        return sorted(str(p.relative_to(self.root)) for p in base.iterdir() if p.is_file() and p.suffix != ".tmp")

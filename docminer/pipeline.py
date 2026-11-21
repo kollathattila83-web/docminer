@@ -4,7 +4,8 @@ Minden irat minden lépése külön állapotot kap. A futtató sorban halad, a k
 lépést átugorja, így leállás vagy hiba után onnan folytat, ahol abbahagyta.
 A lépések idempotensek: újrafuttatáskor felülírják a saját korábbi kimenetüket.
 
-Az 1. körben megvalósított lépések: oldalbontás, szövegkinyerés, csomagkészítés.
+Megvalósított lépések: oldalbontás, szövegkinyerés, irattípus-javaslat (DocSorter),
+csomagkészítés. A típust ember hagyja jóvá a DocMasterben (lásd `docsorter.py`).
 A tervezett hat lépésből a többi (felmérés/DocSorter, képi részek, összerendelés,
 ellenőrzés) ugyanide kerül be új `Step`-ként.
 """
@@ -21,10 +22,13 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from . import __version__
+from . import docsorter
 from .db import Database
 from .extract import extract_page
 from .intake import render_page_png
+from .model_config import load_model_config
 from .models import Document, DocStatus, JobStep, Page, StepStatus
+from .providers import ProviderRegistry, call_step, default_registry
 from .settings import Settings
 from .storage import LocalStorage
 
@@ -37,6 +41,7 @@ class StepContext:
     doc: Document
     storage: LocalStorage
     settings: Settings
+    registry: ProviderRegistry | None = None
 
     def open_original(self) -> pymupdf.Document:
         data = self.storage.get_bytes(LocalStorage.original_key(self.doc.id, self.doc.filename))
@@ -89,6 +94,28 @@ def step_extract_text(ctx: StepContext) -> dict:
     return {"digital_pages": digital, "scanned_pages": scanned, "needs_ocr": scanned > 0, "tables": tables, "tool": f"pymupdf {pymupdf.VersionBind}"}
 
 
+def step_classify(ctx: StepContext) -> dict:
+    """DocSorter: irattípus-javaslat bizonyossággal. A végleges típust ember adja meg."""
+    pages = ctx.session.scalars(select(Page).where(Page.document_id == ctx.doc.id).order_by(Page.number)).all()
+    request = docsorter.build_request(
+        ctx.doc,
+        list(pages),
+        ctx.storage,
+        ctx.settings.config_dir,
+        max_pages=ctx.settings.classify_max_pages,
+        chars_per_page=ctx.settings.classify_chars_per_page,
+    )
+    config = load_model_config(ctx.settings.config_dir / "models.yaml")
+    result = call_step(docsorter.STEP_NAME, request, config, ctx.registry or default_registry())
+    docsorter.apply_suggestion(ctx.doc, result.data)
+    return {
+        "suggested_type": ctx.doc.suggested_type,
+        "confidence": ctx.doc.suggested_confidence,
+        "pages_sent": len(request.pages),
+        **result.trace(),
+    }
+
+
 def step_build_manifest(ctx: StepContext) -> dict:
     """AI-ready csomag: manifest.json az irat mappájában."""
     doc = ctx.doc
@@ -124,7 +151,8 @@ def step_build_manifest(ctx: StepContext) -> dict:
             for s in steps
             if s.name != "build_manifest"
         ],
-        # A későbbi lépések (besorolás, kinyerés, második olvasó) ide írják a megfigyeléseket:
+        "classification": docsorter.classification_block(doc),
+        # A későbbi lépések (kinyerés, második olvasó) ide írják a megfigyeléseket:
         # {field, value, page, bbox, tool, model, confidence, status: biztos|kétes|eltérő}
         "observations": [],
     }
@@ -135,6 +163,7 @@ def step_build_manifest(ctx: StepContext) -> dict:
 PIPELINE: list[Step] = [
     Step("split_pages", step_split_pages),
     Step("extract_text", step_extract_text),
+    Step("classify", step_classify),
     Step("build_manifest", step_build_manifest),
 ]
 
@@ -154,14 +183,15 @@ class Stage:
 
     @property
     def implemented(self) -> bool:
-        return self.step is not None or self.key == "intake"
+        return self.step is not None or self.key in ("intake", "type_review")
 
 
 STAGES: list[Stage] = [
     Stage("intake", "Befogadás", "DocMiner", None, "fájlellenőrzés, duplikációszűrés, eredeti megőrzése"),
     Stage("split_pages", "Oldalbontás", "DocMiner", "split_pages", "oldalanként kép"),
-    Stage("docsorter", "Besorolás", "DocSorter", None, "irattípus és mezőcsoportok"),
     Stage("extract_text", "Szöveg és táblák", "DocMiner", "extract_text", "PyMuPDF; szkennelt oldal OCR-re vár"),
+    Stage("docsorter", "Besorolás", "DocSorter", "classify", "irattípus-javaslat bizonyossággal"),
+    Stage("type_review", "Típus jóváhagyása", "DocMaster", None, "ember elfogadja vagy javítja a típust"),
     Stage("visual", "Képi részek", "DocMiner", None, "aláírás, bélyegző, kézírás"),
     Stage("fields", "Mezők összerendelése", "DocMiner", None, "a típus YAML-ja szerint, forráshellyel"),
     Stage("verify", "Ellenőrzés", "DocMiner", None, "második olvasó, kétes jelölés"),
@@ -188,6 +218,7 @@ def run_document(
     storage: LocalStorage,
     settings: Settings,
     pipeline: list[Step] = PIPELINE,
+    registry: ProviderRegistry | None = None,
 ) -> str:
     """Az irat hátralévő lépéseinek futtatása. Az irat végső állapotát adja vissza."""
     for step in pipeline:
@@ -209,7 +240,7 @@ def run_document(
         try:
             with db.session() as s:
                 doc = s.get(Document, doc_id)
-                output = step.fn(StepContext(session=s, doc=doc, storage=storage, settings=settings))
+                output = step.fn(StepContext(session=s, doc=doc, storage=storage, settings=settings, registry=registry))
                 js = s.scalar(select(JobStep).where(JobStep.document_id == doc_id, JobStep.name == step.name))
                 js.status, js.output, js.finished_at = StepStatus.DONE, output, _now()
         except Exception as exc:

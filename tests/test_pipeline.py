@@ -21,7 +21,7 @@ def test_full_run_creates_ai_ready_package(app, client, settings, invoice_pdf):
 
     d = client.get(f"/documents/{doc['id']}").json()
     assert d["status"] == "done"
-    assert [s["status"] for s in d["steps"]] == ["done"] * 3
+    assert [s["status"] for s in d["steps"]] == ["done"] * 4
     assert [p["kind"] for p in d["pages"]] == ["digital", "scanned"]
     assert d["steps"][1]["output"]["needs_ocr"] is True
 
@@ -158,7 +158,8 @@ def test_pipeline_overview(app, client, settings, invoice_pdf):
     assert list(stages)[0] == "intake" and list(stages)[-1] == "review"
     assert stages["intake"]["counts"]["done"] == 2
     assert stages["extract_text"]["counts"] == {"pending": 1, "running": 0, "done": 1, "failed": 0}
-    assert stages["docsorter"]["implemented"] is False
+    assert stages["docsorter"]["implemented"] is True
+    assert stages["type_review"]["counts"]["pending"] == 1  # a kész irat típusa jóváhagyásra vár
 
     items = {i["id"]: i for i in ov["items"]}
     assert items[done["id"]]["stages"]["build_manifest"]["status"] == "done"

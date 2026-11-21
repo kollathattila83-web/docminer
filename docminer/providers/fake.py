@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 
-from .base import ModelCallError, ProviderRequest, ProviderResult
+from .base import ModelCallError, OcrPageInput, OcrResult, OcrWord, ProviderRequest, ProviderResult
 
 
 def empty_from_schema(schema: dict):
@@ -62,3 +62,26 @@ class FakeProvider:
             model_version="fake-1",
             usage={"input_tokens": chars // 4, "output_tokens": 0, "pages": len(request.pages), "cost_usd": 0.0},
         )
+
+
+class FakeOcrProvider:
+    """Hamis OCR: előre megadott szöveget ad oldalanként (alapból egy rövid mintát)."""
+
+    name = "fake_ocr"
+
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+        self.texts: dict[int, str] = {}
+        self.fail_pages: set[int] = set()
+
+    def ocr(self, page: OcrPageInput, spec) -> OcrResult:
+        self.calls.append(page.number)
+        if page.number in self.fail_pages:
+            raise ModelCallError(f"szimulált OCR-hiba a(z) {page.number}. oldalon")
+        text = self.texts.get(page.number, f"OCR minta szöveg {page.number}. oldal")
+        words, x = [], 72.0
+        for w in text.split():
+            words.append(OcrWord(text=w, bbox=[x, 72.0, x + 6 * len(w), 84.0], confidence=0.99))
+            x += 6 * len(w) + 4
+        return OcrResult(text=text, words=words, provider=self.name, model=spec.model, model_version="fake-1",
+                         confidence=0.99 if words else None, usage={"pages": 1})

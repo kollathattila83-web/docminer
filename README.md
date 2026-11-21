@@ -53,6 +53,16 @@ pytest                                   # tesztek
   A típusból modellfüggetlen JSON-séma készül (érték + oldal + bbox + bizonyosság mezőnként).
   A `verify: true` mezők (adószám, bankszámlaszám) mindig második ellenőrzést kapnak majd.
 
+## Google Cloud (EU): OCR és valódi modell
+
+- **OCR-lépés (`ocr`):** a szövegréteg nélküli oldalak oldalanként a Document AI OCR-hez mennek (EU-helyszín),
+  koordinátás szavakkal; a digitális oldal nem megy ki. A már kifizetett oldalt újraindításkor nem küldi újra.
+- **Havi oldalkorlát:** `DOCMINER_OCR_MONTHLY_PAGE_LIMIT` fölött az irat megáll, hibaüzenettel; a felhasználás
+  a `usage_records` táblában látszik.
+- **Gemini a Vertex AI EU-végpontján:** sémához kötött JSON-kimenet, token- és modellverzió-napló.
+- **Profilváltás egy sorral:** `DOCMINER_MODELS_FILE=models.google.yaml` (valódi) vagy `models.yaml` (próba).
+- Beállítás lépésenként és a kapcsolat ellenőrzése: [docs/GOOGLE_CLOUD.md](docs/GOOGLE_CLOUD.md).
+
 ## Következő lépések
 
 1. Google Cloud (EU): Document AI OCR-adapter a szkennelt oldalakra, Gemini 3.8 Flash adapter (Vertex AI EU).

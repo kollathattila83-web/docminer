@@ -5,12 +5,12 @@ WORKDIR /app
 
 COPY pyproject.toml ./
 COPY docminer ./docminer
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[gcp]"
 
 COPY config ./config
 ENV DOCMINER_CONFIG_DIR=/app/config DOCMINER_DATA_DIR=/data
 
-RUN useradd --create-home --uid 1000 app && mkdir -p /data && chown app /data
+RUN useradd --create-home --uid 1000 app && mkdir -p /data /home/app/.config/gcloud && chown -R app /data /home/app/.config
 USER app
 
 EXPOSE 8000

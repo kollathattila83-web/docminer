@@ -2,6 +2,10 @@
 
 from .base import (
     ModelCallError,
+    OcrPageInput,
+    OcrProvider,
+    OcrResult,
+    OcrWord,
     PageInput,
     Provider,
     ProviderRequest,
@@ -9,16 +13,21 @@ from .base import (
     SchemaValidationError,
     validate_schema,
 )
-from .registry import ProviderRegistry, call_step, default_registry
+from .registry import ProviderRegistry, call_ocr, call_step, default_registry
 
 __all__ = [
     "ModelCallError",
+    "OcrPageInput",
+    "OcrProvider",
+    "OcrResult",
+    "OcrWord",
     "PageInput",
     "Provider",
     "ProviderRegistry",
     "ProviderRequest",
     "ProviderResult",
     "SchemaValidationError",
+    "call_ocr",
     "call_step",
     "default_registry",
     "validate_schema",

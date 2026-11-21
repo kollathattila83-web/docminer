@@ -100,3 +100,20 @@ class JobStep(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     document: Mapped[Document] = relationship(back_populates="steps")
+
+
+class UsageRecord(Base):
+    """Szolgáltatói felhasználás naplója (oldal, token) a havi korlátokhoz és a költségméréshez."""
+
+    __tablename__ = "usage_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    month: Mapped[str] = mapped_column(String(7), index=True)  # "2026-11"
+    step: Mapped[str] = mapped_column(String(50))
+    provider: Mapped[str] = mapped_column(String(50), index=True)
+    model: Mapped[str] = mapped_column(String(100))
+    document_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    pages: Mapped[int] = mapped_column(Integer, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

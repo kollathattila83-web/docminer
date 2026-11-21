@@ -19,7 +19,7 @@ docker compose up --build
 ```
 
 - DocMiner API és dokumentációja: http://localhost:8000/docs
-- DocMaster: http://localhost:8501
+- DocMaster: http://localhost:8501 (Folyamat oldal: élő áttekintés lépésenként, hibák újraindítása; Iratok oldal: oldalkép és szöveg)
 - Több feldolgozó: `docker compose up --scale worker=3`
 
 Docker nélkül, fejlesztéshez (SQLite-tal):
@@ -71,6 +71,7 @@ pytest                                   # tesztek
 | `GET /documents/{id}/pages/{n}/text` · `/layout` · `/image` | oldal szövege, koordinátái, képe |
 | `GET /documents/{id}/manifest` · `/original` | AI-ready csomag, eredeti fájl |
 | `POST /documents/{id}/retry` | hibás irat újraindítása |
+| `GET /pipeline` | folyamat-áttekintés: szakaszok, számlálók, iratonkénti lépésállapot |
 | `GET /config/doctypes` · `/config/models` | beállítások |
 
 Lásd még: [docs/ESZKOZJEGYZEK.md](docs/ESZKOZJEGYZEK.md).

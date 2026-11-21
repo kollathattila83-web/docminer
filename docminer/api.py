@@ -16,7 +16,7 @@ from .doctypes import load_doctypes
 from .intake import ACCEPTED_MIME, IntakeError, check_file
 from .model_config import load_model_config
 from .models import Document, DocStatus, JobStep, Page, StepStatus
-from .pipeline import create_steps
+from .pipeline import STAGES, create_steps
 from .settings import Settings, get_settings
 from .storage import LocalStorage, safe_filename
 
@@ -189,6 +189,68 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 st.status, st.attempts, st.error = StepStatus.PENDING, 0, None
         doc.status, doc.error = DocStatus.QUEUED, None
         return _doc_summary(doc)
+
+    @app.get("/pipeline")
+    def pipeline_overview(limit: int = Query(200, le=1000), s=Depends(session)):
+        """A folyamat áttekintése a DocMaster folyamatnézetéhez: szakaszok, számlálók, iratonkénti állapot."""
+        by_status = dict(s.execute(select(Document.status, func.count()).group_by(Document.status)).all())
+        step_counts: dict[str, dict[str, int]] = {}
+        for name, status, n in s.execute(
+            select(JobStep.name, JobStep.status, func.count()).group_by(JobStep.name, JobStep.status)
+        ):
+            step_counts.setdefault(name, {})[status] = n
+        total = sum(by_status.values())
+
+        docs = s.scalars(select(Document).order_by(Document.created_at.desc()).limit(limit)).all()
+        ids = [d.id for d in docs]
+        steps_by_doc: dict[str, dict[str, dict]] = {i: {} for i in ids}
+        scanned: dict[str, list[int]] = {i: [] for i in ids}
+        if ids:
+            for st in s.scalars(select(JobStep).where(JobStep.document_id.in_(ids))):
+                steps_by_doc[st.document_id][st.name] = {"status": st.status, "attempts": st.attempts, "error": st.error}
+            for doc_id, number in s.execute(
+                select(Page.document_id, Page.number).where(Page.document_id.in_(ids), Page.kind == "scanned")
+            ):
+                scanned[doc_id].append(number)
+
+        stages = []
+        for stg in STAGES:
+            if stg.key == "intake":
+                counts = {StepStatus.DONE: total}
+            elif stg.step:
+                counts = step_counts.get(stg.step, {})
+            else:
+                counts = {}
+            stages.append(
+                {
+                    "key": stg.key,
+                    "label": stg.label,
+                    "module": stg.module,
+                    "description": stg.description,
+                    "implemented": stg.implemented,
+                    "counts": {k: counts.get(k, 0) for k in StepStatus},
+                }
+            )
+
+        items = []
+        for d in docs:
+            cells = {}
+            for stg in STAGES:
+                if stg.key == "intake":
+                    cells[stg.key] = {"status": StepStatus.DONE}
+                elif stg.step:
+                    cells[stg.key] = steps_by_doc[d.id].get(stg.step, {"status": StepStatus.PENDING})
+                else:
+                    cells[stg.key] = {"status": "planned"}
+            items.append(
+                {**_doc_summary(d), "stages": cells, "scanned_pages": sorted(scanned[d.id])}
+            )
+
+        return {
+            "documents": {"total": total, "by_status": {k: by_status.get(k, 0) for k in DocStatus}},
+            "stages": stages,
+            "items": items,
+        }
 
     @app.get("/config/doctypes")
     def doctypes():

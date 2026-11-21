@@ -139,6 +139,37 @@ PIPELINE: list[Step] = [
 ]
 
 
+# --- Megjelenítéshez: a teljes tervezett folyamat ------------------------
+# A DocMaster ebből rajzolja ki a folyamatot. Az `implemented=False` szakaszok
+# a terv későbbi lépései; amikor elkészülnek, a `step` mező a PIPELINE lépésére mutat.
+
+
+@dataclass(frozen=True)
+class Stage:
+    key: str
+    label: str
+    module: str
+    step: str | None  # a PIPELINE lépésének neve; None = még nincs megvalósítva
+    description: str
+
+    @property
+    def implemented(self) -> bool:
+        return self.step is not None or self.key == "intake"
+
+
+STAGES: list[Stage] = [
+    Stage("intake", "Befogadás", "DocMiner", None, "fájlellenőrzés, duplikációszűrés, eredeti megőrzése"),
+    Stage("split_pages", "Oldalbontás", "DocMiner", "split_pages", "oldalanként kép"),
+    Stage("docsorter", "Besorolás", "DocSorter", None, "irattípus és mezőcsoportok"),
+    Stage("extract_text", "Szöveg és táblák", "DocMiner", "extract_text", "PyMuPDF; szkennelt oldal OCR-re vár"),
+    Stage("visual", "Képi részek", "DocMiner", None, "aláírás, bélyegző, kézírás"),
+    Stage("fields", "Mezők összerendelése", "DocMiner", None, "a típus YAML-ja szerint, forráshellyel"),
+    Stage("verify", "Ellenőrzés", "DocMiner", None, "második olvasó, kétes jelölés"),
+    Stage("build_manifest", "AI-ready csomag", "DocMiner", "build_manifest", "manifest.json"),
+    Stage("review", "Emberi átnézés", "DocMaster", None, "kétes értékek jóváhagyása"),
+]
+
+
 # --- Futtató ---------------------------------------------------------------
 
 

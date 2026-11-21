@@ -141,3 +141,27 @@ def test_list_filter(client, invoice_pdf):
     _upload(client, make_pdf(["Szerzodes"]), "szerzodes.pdf")
     assert client.get("/documents", params={"q": "szerz"}).json()["total"] == 1
     assert client.get("/documents", params={"status": "queued"}).json()["total"] == 2
+
+
+def test_pipeline_overview(app, client, settings, invoice_pdf):
+    from .conftest import make_pdf
+
+    done = _upload(client, invoice_pdf, "kesz.pdf")
+    drain(app.state.db, app.state.storage, settings)
+    waiting = _upload(client, make_pdf(["Varakozo irat szovege itt"]), "var.pdf")
+
+    ov = client.get("/pipeline").json()
+    assert ov["documents"]["total"] == 2
+    assert ov["documents"]["by_status"] == {"queued": 1, "processing": 0, "done": 1, "failed": 0}
+
+    stages = {s["key"]: s for s in ov["stages"]}
+    assert list(stages)[0] == "intake" and list(stages)[-1] == "review"
+    assert stages["intake"]["counts"]["done"] == 2
+    assert stages["extract_text"]["counts"] == {"pending": 1, "running": 0, "done": 1, "failed": 0}
+    assert stages["docsorter"]["implemented"] is False
+
+    items = {i["id"]: i for i in ov["items"]}
+    assert items[done["id"]]["stages"]["build_manifest"]["status"] == "done"
+    assert items[done["id"]]["scanned_pages"] == [2]
+    assert items[waiting["id"]]["stages"]["split_pages"]["status"] == "pending"
+    assert items[waiting["id"]]["stages"]["visual"]["status"] == "planned"

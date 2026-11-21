@@ -12,13 +12,14 @@ ellenőrzés) ugyanide kerül be új `Step`-ként.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import pymupdf
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from . import __version__
@@ -27,9 +28,9 @@ from .db import Database
 from .extract import extract_page
 from .intake import render_page_png
 from .model_config import load_model_config
-from .models import Document, DocStatus, JobStep, Page, StepStatus
-from .providers import ProviderRegistry, call_step, default_registry
-from .settings import Settings
+from .models import Document, DocStatus, JobStep, Page, StepStatus, UsageRecord
+from .providers import OcrPageInput, ProviderRegistry, call_ocr, call_step, default_registry
+from .settings import Settings, models_path
 from .storage import LocalStorage
 
 log = logging.getLogger(__name__)
@@ -94,6 +95,107 @@ def step_extract_text(ctx: StepContext) -> dict:
     return {"digital_pages": digital, "scanned_pages": scanned, "needs_ocr": scanned > 0, "tables": tables, "tool": f"pymupdf {pymupdf.VersionBind}"}
 
 
+class BudgetExceeded(RuntimeError):
+    """A havi korlát elfogyott; az irat hibás állapotba kerül, és a korlát emelése után újraindítható."""
+
+
+def _month() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def ocr_pages_used(session: Session, month: str) -> int:
+    """A hónapban valódi (nem próba) OCR-szolgáltatónál felhasznált oldalak."""
+    return int(
+        session.scalar(
+            select(func.coalesce(func.sum(UsageRecord.pages), 0)).where(
+                UsageRecord.month == month, UsageRecord.step == "ocr", ~UsageRecord.provider.startswith("fake")
+            )
+        )
+    )
+
+
+def _single_page_pdf(src: pymupdf.Document, index: int) -> bytes:
+    out = pymupdf.open()
+    out.insert_pdf(src, from_page=index, to_page=index)
+    data = out.tobytes(garbage=3, deflate=True)
+    out.close()
+    return data
+
+
+def step_ocr(ctx: StepContext) -> dict:
+    """A szövegréteg nélküli (szkennelt) oldalak OCR-je; a már kész oldalt nem küldi újra.
+
+    A modell a models.yaml `ocr` lépéséből jön (élesben Document AI, EU).
+    Indítás előtt ellenőrzi a havi oldalkorlátot, így a keret nem lépi túl.
+    """
+    config = load_model_config(models_path(ctx.settings))
+    spec = config.for_step("ocr")
+    registry = ctx.registry or default_registry()
+    pages = ctx.session.scalars(
+        select(Page).where(Page.document_id == ctx.doc.id, Page.kind == "scanned").order_by(Page.number)
+    ).all()
+
+    todo, resumed = [], 0
+    for p in pages:
+        key = LocalStorage.page_layout_key(ctx.doc.id, p.number)
+        if ctx.storage.exists(key):
+            layout = json.loads(ctx.storage.get_bytes(key))
+            if str(layout.get("tool", "")).startswith("ocr:"):
+                # Korábbi futásban már kifizetett oldal: csak visszatöltjük.
+                p.text = ctx.storage.get_bytes(LocalStorage.page_text_key(ctx.doc.id, p.number)).decode("utf-8")
+                p.char_count = sum(1 for c in p.text if not c.isspace())
+                resumed += 1
+                continue
+        todo.append(p)
+
+    month = _month()
+    used = ocr_pages_used(ctx.session, month)
+    real = not spec.provider.startswith("fake")
+    if real and todo and used + len(todo) > ctx.settings.ocr_monthly_page_limit:
+        raise BudgetExceeded(
+            f"Havi OCR-korlát: {used} oldal felhasználva, ez az irat még {len(todo)} oldalt kérne, "
+            f"a korlát {ctx.settings.ocr_monthly_page_limit} (DOCMINER_OCR_MONTHLY_PAGE_LIMIT)."
+        )
+
+    confs, used_model, used_provider = [], spec.model, spec.provider
+    if todo:
+        with ctx.open_original() as src:
+            pdf = src if src.is_pdf else pymupdf.open("pdf", src.convert_to_pdf())
+            for p in todo:
+                page_input = OcrPageInput(
+                    number=p.number, width=p.width, height=p.height, pdf_bytes=_single_page_pdf(pdf, p.number - 1)
+                )
+                res = call_ocr("ocr", page_input, config, registry)
+                p.text = res.text
+                p.char_count = sum(1 for c in res.text if not c.isspace())
+                ctx.storage.put_text(LocalStorage.page_text_key(ctx.doc.id, p.number), res.text)
+                ctx.storage.put_json(
+                    LocalStorage.page_layout_key(ctx.doc.id, p.number), res.layout(p.number, p.width, p.height)
+                )
+                ctx.session.add(
+                    UsageRecord(
+                        month=month, step="ocr", provider=res.provider, model=res.model,
+                        document_id=ctx.doc.id, pages=int(res.usage.get("pages", 1)),
+                    )
+                )
+                used_model, used_provider = res.model, res.provider
+                if res.confidence is not None:
+                    confs.append(res.confidence)
+            if pdf is not src:
+                pdf.close()
+
+    return {
+        "ocr_pages": len(todo),
+        "resumed_pages": resumed,
+        "provider": used_provider,
+        "model": used_model,
+        "avg_confidence": round(sum(confs) / len(confs), 4) if confs else None,
+        "month": month,
+        "month_pages_used": used + (len(todo) if real else 0),
+        "month_page_limit": ctx.settings.ocr_monthly_page_limit,
+    }
+
+
 def step_classify(ctx: StepContext) -> dict:
     """DocSorter: irattípus-javaslat bizonyossággal. A végleges típust ember adja meg."""
     pages = ctx.session.scalars(select(Page).where(Page.document_id == ctx.doc.id).order_by(Page.number)).all()
@@ -105,7 +207,7 @@ def step_classify(ctx: StepContext) -> dict:
         max_pages=ctx.settings.classify_max_pages,
         chars_per_page=ctx.settings.classify_chars_per_page,
     )
-    config = load_model_config(ctx.settings.config_dir / "models.yaml")
+    config = load_model_config(models_path(ctx.settings))
     result = call_step(docsorter.STEP_NAME, request, config, ctx.registry or default_registry())
     docsorter.apply_suggestion(ctx.doc, result.data)
     return {
@@ -163,6 +265,7 @@ def step_build_manifest(ctx: StepContext) -> dict:
 PIPELINE: list[Step] = [
     Step("split_pages", step_split_pages),
     Step("extract_text", step_extract_text),
+    Step("ocr", step_ocr),
     Step("classify", step_classify),
     Step("build_manifest", step_build_manifest),
 ]
@@ -189,7 +292,8 @@ class Stage:
 STAGES: list[Stage] = [
     Stage("intake", "Befogadás", "DocMiner", None, "fájlellenőrzés, duplikációszűrés, eredeti megőrzése"),
     Stage("split_pages", "Oldalbontás", "DocMiner", "split_pages", "oldalanként kép"),
-    Stage("extract_text", "Szöveg és táblák", "DocMiner", "extract_text", "PyMuPDF; szkennelt oldal OCR-re vár"),
+    Stage("extract_text", "Szöveg és táblák", "DocMiner", "extract_text", "digitális PDF, PyMuPDF"),
+    Stage("ocr", "OCR", "DocMiner", "ocr", "szkennelt oldalak, Document AI (EU)"),
     Stage("docsorter", "Besorolás", "DocSorter", "classify", "irattípus-javaslat bizonyossággal"),
     Stage("type_review", "Típus jóváhagyása", "DocMaster", None, "ember elfogadja vagy javítja a típust"),
     Stage("visual", "Képi részek", "DocMiner", None, "aláírás, bélyegző, kézírás"),

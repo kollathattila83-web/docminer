@@ -53,12 +53,23 @@ pytest                                   # tesztek
   A típusból modellfüggetlen JSON-séma készül (érték + oldal + bbox + bizonyosság mezőnként).
   A `verify: true` mezők (adószám, bankszámlaszám) mindig második ellenőrzést kapnak majd.
 
+## Google Cloud (EU): OCR és valódi modell
+
+- **OCR-lépés (`ocr`):** a szövegréteg nélküli oldalak oldalanként a Document AI OCR-hez mennek (EU-helyszín),
+  koordinátás szavakkal; a digitális oldal nem megy ki. A már kifizetett oldalt újraindításkor nem küldi újra.
+- **Havi oldalkorlát:** `DOCMINER_OCR_MONTHLY_PAGE_LIMIT` fölött az irat megáll, hibaüzenettel; a felhasználás
+  a `usage_records` táblában látszik.
+- **Gemini a Vertex AI EU-végpontján:** sémához kötött JSON-kimenet, token- és modellverzió-napló.
+- **Profilváltás egy sorral:** `DOCMINER_MODELS_FILE=models.google.yaml` (valódi) vagy `models.yaml` (próba).
+- Beállítás lépésenként és a kapcsolat ellenőrzése: [docs/GOOGLE_CLOUD.md](docs/GOOGLE_CLOUD.md).
+
 ## Irattípus: a gép javasol, ember dönt
 
 - **Besorolás (`classify` lépés):** a DocSorter a szövegkinyerés után javasol egy típust a
   `config/doctypes/` típusai közül (vagy „egyéb”), 0–1 közötti bizonyossággal és rövid indoklással.
-  A modell a `config/models.yaml` `docsorter` sorából jön; most a próbamodell (`fake`) mindig
-  „egyéb, 0%”-ot ad, a valódi modell a Google Cloud fiók után kerül be.
+  Az OCR után fut, így a szkennelt oldal szövegét is látja. A modell az aktív profil
+  (`DOCMINER_MODELS_FILE`) `docsorter` sorából jön: a próbaprofilban (`models.yaml`) mindig „egyéb, 0%”,
+  a Google-profilban (`models.google.yaml`) a Gemini javasol.
 - **Jóváhagyás (DocMaster → Jóváhagyás oldal):** a legbizonytalanabb irat elöl; oldalkép, szöveg,
   javaslat. Az ember elfogadja vagy javítja; a döntés utólag az Iratok oldalon módosítható.
   A javaslat és a döntés külön mezőben marad, így mérhető a pontosság (`GET /review/doctypes/stats`).

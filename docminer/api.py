@@ -20,7 +20,7 @@ from .intake import ACCEPTED_MIME, IntakeError, check_file
 from .model_config import load_model_config
 from .models import Document, DocStatus, JobStep, Page, StepStatus, TypeStatus
 from .pipeline import STAGES, create_steps
-from .settings import Settings, get_settings
+from .settings import Settings, get_settings, models_path
 from .storage import LocalStorage, safe_filename
 
 _CHUNK = 1024 * 1024
@@ -358,7 +358,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/config/models")
     def models():
-        return load_model_config(settings.config_dir / "models.yaml").model_dump()
+        return load_model_config(models_path(settings)).model_dump()
 
     @app.get("/config/accepted-types")
     def accepted():

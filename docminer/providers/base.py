@@ -49,6 +49,48 @@ class ProviderResult:
         }
 
 
+@dataclass
+class OcrWord:
+    text: str
+    bbox: list[float]  # PDF-pontban, bal felső sarok az origó (mint a PyMuPDF-nél)
+    confidence: float | None = None
+
+
+@dataclass
+class OcrResult:
+    """Egy oldal OCR-eredménye. A koordináták az oldal PDF-pontjaiban vannak."""
+
+    text: str
+    words: list[OcrWord]
+    provider: str
+    model: str
+    model_version: str | None = None
+    confidence: float | None = None  # az oldal átlagos bizonyossága
+    usage: dict = field(default_factory=dict)
+
+    def layout(self, number: int, width: float, height: float) -> dict:
+        return {
+            "page": number,
+            "width": width,
+            "height": height,
+            "kind": "scanned",
+            "tool": f"ocr:{self.provider}/{self.model}",
+            "model_version": self.model_version,
+            "confidence": self.confidence,
+            "words": [{"text": w.text, "bbox": w.bbox, "confidence": w.confidence} for w in self.words],
+            "blocks": [],
+            "tables": [],
+        }
+
+
+@dataclass
+class OcrPageInput:
+    number: int
+    width: float  # PDF-pont
+    height: float
+    pdf_bytes: bytes  # egyoldalas PDF (az eredeti felbontással)
+
+
 class ModelCallError(RuntimeError):
     """A szolgáltató hívása sikertelen (hálózat, kvóta, szolgáltatói hiba)."""
 
@@ -62,6 +104,13 @@ class Provider(Protocol):
     name: str
 
     def generate(self, request: ProviderRequest, spec: ModelSpec) -> ProviderResult: ...
+
+
+@runtime_checkable
+class OcrProvider(Protocol):
+    name: str
+
+    def ocr(self, page: OcrPageInput, spec: ModelSpec) -> OcrResult: ...
 
 
 # --- Minimális JSON-séma ellenőrző (type, properties, required, items, enum) ---

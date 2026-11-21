@@ -34,6 +34,15 @@ class Settings:
     worker_poll_seconds: float = field(
         default_factory=lambda: float(os.environ.get("DOCMINER_WORKER_POLL_SECONDS", "2"))
     )
+    # Modellprofil a config mappán belül (pl. models.google.yaml a valódi szolgáltatókhoz).
+    models_file: str = field(default_factory=lambda: os.environ.get("DOCMINER_MODELS_FILE", "models.yaml"))
+    # Havi OCR-oldalkorlát a valódi (nem fake) szolgáltatóknál. A Google költségkerete csak
+    # figyelmeztet, ez tényleg megállít. Alap: a Document AI ingyenes havi 1 000 oldala.
+    ocr_monthly_page_limit: int = field(
+        default_factory=lambda: int(os.environ.get("DOCMINER_OCR_MONTHLY_PAGE_LIMIT", "1000"))
+    )
+    # OCR-hez küldött oldal felbontása, ha az eredeti kép (nem PDF).
+    ocr_image_dpi: int = field(default_factory=lambda: int(os.environ.get("DOCMINER_OCR_IMAGE_DPI", "300")))
     # Ennyi próbálkozás után a lépés végleg hibás (failed) marad.
     max_step_attempts: int = field(
         default_factory=lambda: int(os.environ.get("DOCMINER_MAX_STEP_ATTEMPTS", "3"))
@@ -45,6 +54,10 @@ class Settings:
     classify_chars_per_page: int = field(
         default_factory=lambda: int(os.environ.get("DOCMINER_CLASSIFY_CHARS_PER_PAGE", "4000"))
     )
+
+
+def models_path(settings: Settings) -> Path:
+    return settings.config_dir / settings.models_file
 
 
 def get_settings() -> Settings:

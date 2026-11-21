@@ -7,6 +7,12 @@ x-docminer-env: &docminer-env
   DOCMINER_DATA_DIR: /data
   DOCMINER_MAX_UPLOAD_MB: ${DOCMINER_MAX_UPLOAD_MB:-100}
   DOCMINER_WORKER_POLL_SECONDS: ${DOCMINER_WORKER_POLL_SECONDS:-2}
+  DOCMINER_MODELS_FILE: ${DOCMINER_MODELS_FILE:-models.yaml}
+  DOCMINER_OCR_MONTHLY_PAGE_LIMIT: ${DOCMINER_OCR_MONTHLY_PAGE_LIMIT:-1000}
+  GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+  DOCMINER_DOCAI_PROCESSOR_ID: ${DOCMINER_DOCAI_PROCESSOR_ID:-}
+  # A gépen `gcloud auth application-default login`-nal létrehozott belépés, csak olvasásra.
+  GOOGLE_APPLICATION_CREDENTIALS: /home/app/.config/gcloud/application_default_credentials.json
 
 services:
   db:
@@ -28,6 +34,7 @@ services:
     volumes:
       - docdata:/data
       - ./config:/app/config:ro
+      - ${GCLOUD_CONFIG_DIR:-~/.config/gcloud}:/home/app/.config/gcloud:ro
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -40,6 +47,7 @@ services:
     volumes:
       - docdata:/data
       - ./config:/app/config:ro
+      - ${GCLOUD_CONFIG_DIR:-~/.config/gcloud}:/home/app/.config/gcloud:ro
     depends_on:
       db: {condition: service_healthy}
 

@@ -21,7 +21,7 @@ def test_full_run_creates_ai_ready_package(app, client, settings, invoice_pdf):
 
     d = client.get(f"/documents/{doc['id']}").json()
     assert d["status"] == "done"
-    assert [s["status"] for s in d["steps"]] == ["done"] * 4
+    assert [s["status"] for s in d["steps"]] == ["done"] * 5
     assert [p["kind"] for p in d["pages"]] == ["digital", "scanned"]
     assert d["steps"][1]["output"]["needs_ocr"] is True
 

@@ -2,7 +2,8 @@
 # Csere előtt az aranymintán (30–50 ellenőrzött saját irat) mérjük a pontosságot,
 # az oldalankénti költséget és az időt.
 #
-# Az 1. körben minden lépés a hamis ("fake") szolgáltatót használja: nincs hálózat, nincs költség.
+# Ez a próbaprofil: minden lépés hamis ("fake") szolgáltatót használ, nincs hálózat, nincs költség.
+# A valódi szolgáltatók profilja: models.google.yaml (bekapcsolás: DOCMINER_MODELS_FILE=models.google.yaml).
 # Később, példák:
 #   provider: vertex_gemini   model: gemini-3.8-flash   location: eu
 #   provider: document_ai     model: ocr                location: eu
@@ -21,7 +22,7 @@ steps:
       model: fake-sorter-backup
 
   ocr:              # szkennelt oldalak szövege (Document AI)
-    provider: fake
+    provider: fake_ocr
     model: fake-ocr
 
   extraction:       # mezőkinyerés a típus YAML-ja szerint

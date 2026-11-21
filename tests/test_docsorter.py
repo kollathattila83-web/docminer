@@ -3,7 +3,7 @@ import json
 import pytest
 
 from docminer import pipeline as pl
-from docminer.providers import ProviderRegistry
+from docminer.providers import default_registry
 from docminer.providers.fake import FakeProvider
 from docminer.worker import drain
 
@@ -19,8 +19,8 @@ def _upload(client, data, name="irat.pdf"):
 def _run_with(app, settings, doc_id, *responses):
     fake = FakeProvider()
     fake.queue("classify", *responses)
-    reg = ProviderRegistry()
-    reg.register(fake)
+    reg = default_registry()
+    reg.register(fake)  # a „fake” szolgáltató helyére a betanított példány
     assert pl.run_document(app.state.db, doc_id, app.state.storage, settings, registry=reg) == "done"
     return fake
 
@@ -34,7 +34,8 @@ def test_classify_step_stores_suggestion_and_waits_for_human(app, client, settin
     assert "szamla" in req.instructions and "egyeb" in req.instructions
     assert req.schema["properties"]["doc_type"]["enum"][0] == "egyeb"
     assert "2026/0042" in req.pages[0].text
-    assert req.pages[1].text is None and req.pages[1].image_path  # szkennelt oldal: kép megy
+    # A szkennelt oldal az OCR után már szöveggel érkezik, mellette a kép is megy.
+    assert req.pages[1].text.startswith("OCR") and req.pages[1].image_path
 
     d = client.get(f"/documents/{doc['id']}").json()
     assert d["suggested_type"] == "szamla" and d["suggested_confidence"] == 0.93

@@ -216,3 +216,96 @@ def test_google_profile_loads():
     assert cfg.for_step("ocr").provider == "document_ai" and cfg.for_step("ocr").location == "eu"
     assert cfg.for_step("docsorter").provider == "vertex_gemini" and cfg.for_step("docsorter").location == "eu"
     assert set(default_registry().names()) >= {"document_ai", "vertex_gemini", "fake", "fake_ocr"}
+
+
+# --- Havi modellhívás-korlát ---------------------------------------------
+
+
+def _guarded(app, settings, **limits):
+    from dataclasses import replace
+
+    from docminer.budget import UsageGuard
+
+    reg = default_registry()
+    st = replace(settings, **limits)
+    reg.guard = UsageGuard(app.state.db, st, document_id=None, step="docsorter")
+    return reg, st
+
+
+class _PaidModel:
+    name = "vertex_gemini"
+
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, request, spec):
+        from docminer.providers import ProviderResult
+
+        self.calls += 1
+        return ProviderResult(data={"doc_type": "szamla"}, provider=self.name, model=spec.model,
+                              usage={"input_tokens": 1000, "output_tokens": 50, "thinking_tokens": 10, "pages": 1})
+
+
+def _cfg():
+    from docminer.model_config import ModelConfig
+
+    return ModelConfig.model_validate({"steps": {"docsorter": {"provider": "vertex_gemini", "model": "gemini-3.8-flash",
+                                                               "fallback": {"provider": "vertex_gemini", "model": "masik"}}}})
+
+
+def test_llm_call_limit_stops_before_paid_call(app, settings):
+    from docminer.providers import BudgetExceeded, call_step
+
+    reg, _ = _guarded(app, settings, llm_monthly_call_limit=2)
+    paid = _PaidModel()
+    reg.register(paid)
+    req = ProviderRequest(task="classify", instructions="x", schema=SCHEMA)
+    call_step("docsorter", req, _cfg(), reg)
+    call_step("docsorter", req, _cfg(), reg)
+    with pytest.raises(BudgetExceeded, match="modellhívás-korlát"):
+        call_step("docsorter", req, _cfg(), reg)
+    assert paid.calls == 2  # a harmadik hívás el sem indult, és tartalékra sem váltott
+    with app.state.db.session() as s:
+        recs = s.scalars(select(UsageRecord).where(UsageRecord.step == "docsorter")).all()
+    assert [(r.input_tokens, r.output_tokens) for r in recs] == [(1000, 60), (1000, 60)]
+
+
+def test_llm_token_limit(app, settings):
+    from docminer.providers import BudgetExceeded, call_step
+
+    reg, _ = _guarded(app, settings, llm_monthly_token_limit=1500)
+    reg.register(_PaidModel())
+    req = ProviderRequest(task="classify", instructions="x", schema=SCHEMA)
+    call_step("docsorter", req, _cfg(), reg)  # 1060 token
+    call_step("docsorter", req, _cfg(), reg)  # még a korlát alatt indult: 2120
+    with pytest.raises(BudgetExceeded, match="tokenkorlát"):
+        call_step("docsorter", req, _cfg(), reg)
+
+
+def test_fake_provider_ignores_llm_limit(app, settings):
+    from docminer.model_config import ModelConfig
+    from docminer.providers import call_step
+
+    reg, _ = _guarded(app, settings, llm_monthly_call_limit=0)
+    cfg = ModelConfig.model_validate({"steps": {"docsorter": {"provider": "fake", "model": "f"}}})
+    call_step("docsorter", ProviderRequest(task="classify", instructions="x", schema=SCHEMA), cfg, reg)
+
+
+def test_budget_exceeded_fails_document_immediately(app, client, settings):
+    from docminer.providers import BudgetExceeded
+
+    doc_id = _upload(client, make_pdf(["Valami digitalis szoveg itt van"]))
+
+    def broke(ctx):
+        raise BudgetExceeded("Havi modellhívás-korlát elfogyott")
+
+    steps = [pl.Step("split_pages", pl.step_split_pages), pl.Step("classify", broke)]
+    assert pl.run_document(app.state.db, doc_id, app.state.storage, settings, steps) == DocStatus.FAILED
+    with app.state.db.session() as s:
+        assert s.scalar(select(JobStep).where(JobStep.document_id == doc_id, JobStep.name == "classify")).attempts == 1
+
+
+def test_usage_endpoint(client):
+    u = client.get("/usage").json()
+    assert u["ocr_pages"] == {"used": 0, "limit": 1000}
+    assert u["llm_calls"]["limit"] == 2000 and u["models_file"] == "models.yaml"

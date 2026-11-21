@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 class ProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, Provider | OcrProvider] = {}
+        # Havi korlát-őr (docminer.budget.UsageGuard); a feldolgozó állítja be lépésenként.
+        self.guard = None
 
     def register(self, provider: Provider | OcrProvider) -> None:
         self._providers[provider.name] = provider
@@ -55,8 +57,12 @@ def call_step(
     for candidate in spec.chain():
         provider = registry.get(candidate.provider)
         for attempt in range(1 + config.max_retries):
+            if registry.guard is not None:
+                registry.guard.check(candidate.provider)  # BudgetExceeded: azonnal megáll
             try:
                 result = provider.generate(request, candidate)
+                if registry.guard is not None:
+                    registry.guard.record(step, result)  # a kifizetett hívás akkor is naplózva, ha a kimenet hibás
                 validate_schema(result.data, request.schema)
             except (ModelCallError, SchemaValidationError) as exc:
                 failures.append(

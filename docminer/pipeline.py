@@ -29,7 +29,7 @@ from .extract import extract_page
 from .intake import render_page_png
 from .model_config import load_model_config
 from .models import Document, DocStatus, JobStep, Page, StepStatus, UsageRecord
-from .providers import OcrPageInput, ProviderRegistry, call_ocr, call_step, default_registry
+from .providers import BudgetExceeded, OcrPageInput, ProviderRegistry, call_ocr, call_step, default_registry
 from .settings import Settings, models_path
 from .storage import LocalStorage
 
@@ -93,10 +93,6 @@ def step_extract_text(ctx: StepContext) -> dict:
             scanned += ex.kind == "scanned"
             tables += len(ex.tables)
     return {"digital_pages": digital, "scanned_pages": scanned, "needs_ocr": scanned > 0, "tables": tables, "tool": f"pymupdf {pymupdf.VersionBind}"}
-
-
-class BudgetExceeded(RuntimeError):
-    """A havi korlát elfogyott; az irat hibás állapotba kerül, és a korlát emelése után újraindítható."""
 
 
 def _month() -> str:
@@ -325,12 +321,16 @@ def run_document(
     registry: ProviderRegistry | None = None,
 ) -> str:
     """Az irat hátralévő lépéseinek futtatása. Az irat végső állapotát adja vissza."""
+    from .budget import UsageGuard
+
+    registry = registry or default_registry()
     for step in pipeline:
+        registry.guard = UsageGuard(db, settings, document_id=doc_id, step=step.name)
         with db.session() as s:
             doc = s.get(Document, doc_id)
             js = s.scalar(select(JobStep).where(JobStep.document_id == doc_id, JobStep.name == step.name))
             if js is None:  # új lépés került a láncba a feltöltés után
-                js = JobStep(document_id=doc_id, name=step.name, order=pipeline.index(step))
+                js = JobStep(document_id=doc_id, name=step.name, order=pipeline.index(step), status=StepStatus.PENDING, attempts=0)
                 s.add(js)
             if js.status == StepStatus.DONE:
                 continue
@@ -353,7 +353,8 @@ def run_document(
                 doc = s.get(Document, doc_id)
                 js = s.scalar(select(JobStep).where(JobStep.document_id == doc_id, JobStep.name == step.name))
                 js.status, js.error, js.finished_at = StepStatus.FAILED, f"{type(exc).__name__}: {exc}", _now()
-                final = js.attempts >= settings.max_step_attempts
+                # Elfogyott keretnél nincs értelme újrapróbálni: korlátemelés után a retry indítja újra.
+                final = isinstance(exc, BudgetExceeded) or js.attempts >= settings.max_step_attempts
                 doc.status = DocStatus.FAILED if final else DocStatus.QUEUED
                 doc.error = f"{step.name}: {js.error}"
                 doc.locked_by = doc.locked_at = None

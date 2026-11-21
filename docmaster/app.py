@@ -110,6 +110,16 @@ def render_pipeline():
     m[3].metric("Kész", by["done"])
     m[4].metric("Hibás", by["failed"])
 
+    u = api("GET", "/usage")
+    if u.ok:
+        u = u.json()
+        st.caption(
+            f"Havi keret ({u['month']}, profil: {u['models_file']}): "
+            f"OCR {u['ocr_pages']['used']} / {u['ocr_pages']['limit']} oldal · "
+            f"modellhívás {u['llm_calls']['used']} / {u['llm_calls']['limit']} · "
+            f"token {u['llm_tokens']['used']:,} / {u['llm_tokens']['limit']:,}".replace(",", " ")
+        )
+
     finished = by["done"] + by["failed"]
     st.progress(finished / total if total else 0.0, text=f"Haladás: {finished} / {total} irat végzett")
 

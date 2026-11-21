@@ -57,8 +57,9 @@ pytest                                   # tesztek
 
 - **OCR-lépés (`ocr`):** a szövegréteg nélküli oldalak oldalanként a Document AI OCR-hez mennek (EU-helyszín),
   koordinátás szavakkal; a digitális oldal nem megy ki. A már kifizetett oldalt újraindításkor nem küldi újra.
-- **Havi oldalkorlát:** `DOCMINER_OCR_MONTHLY_PAGE_LIMIT` fölött az irat megáll, hibaüzenettel; a felhasználás
-  a `usage_records` táblában látszik.
+- **Havi korlátok:** OCR-oldal (`DOCMINER_OCR_MONTHLY_PAGE_LIMIT`), modellhívás és token
+  (`DOCMINER_LLM_MONTHLY_CALL_LIMIT`, `..._TOKEN_LIMIT`). Fölöttük a hívás el sem indul, az irat hibás lesz
+  üzenettel, és a korlát emelése után újraindítható. Felhasználás: `GET /usage` és a Folyamat oldal.
 - **Gemini a Vertex AI EU-végpontján:** sémához kötött JSON-kimenet, token- és modellverzió-napló.
 - **Profilváltás egy sorral:** `DOCMINER_MODELS_FILE=models.google.yaml` (valódi) vagy `models.yaml` (próba).
 - Beállítás lépésenként és a kapcsolat ellenőrzése: [docs/GOOGLE_CLOUD.md](docs/GOOGLE_CLOUD.md).

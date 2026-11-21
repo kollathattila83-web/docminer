@@ -41,6 +41,13 @@ class Settings:
     ocr_monthly_page_limit: int = field(
         default_factory=lambda: int(os.environ.get("DOCMINER_OCR_MONTHLY_PAGE_LIMIT", "1000"))
     )
+    # Havi korlát a valódi modellhívásokra (Gemini stb.); túllépésnél a feldolgozás megáll.
+    llm_monthly_call_limit: int = field(
+        default_factory=lambda: int(os.environ.get("DOCMINER_LLM_MONTHLY_CALL_LIMIT", "2000"))
+    )
+    llm_monthly_token_limit: int = field(
+        default_factory=lambda: int(os.environ.get("DOCMINER_LLM_MONTHLY_TOKEN_LIMIT", "5000000"))
+    )
     # OCR-hez küldött oldal felbontása, ha az eredeti kép (nem PDF).
     ocr_image_dpi: int = field(default_factory=lambda: int(os.environ.get("DOCMINER_OCR_IMAGE_DPI", "300")))
     # Ennyi próbálkozás után a lépés végleg hibás (failed) marad.

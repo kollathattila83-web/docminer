@@ -95,6 +95,10 @@ class ModelCallError(RuntimeError):
     """A szolgáltató hívása sikertelen (hálózat, kvóta, szolgáltatói hiba)."""
 
 
+class BudgetExceeded(RuntimeError):
+    """A havi felhasználási korlát elfogyott. Nem vált tartalékmodellre: a hívás megáll."""
+
+
 class SchemaValidationError(ValueError):
     pass
 

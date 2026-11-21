@@ -4,9 +4,12 @@ Kulcsfájl vagy jelszó sehová nem kell: a programok a gépeden lévő
 `gcloud` belépéssel (Application Default Credentials) futnak, a Docker ezt csak olvasásra kapja meg.
 
 1. **Projekt:** console.cloud.google.com → projektválasztó → *New project* → `docminer`. Jegyezd fel a **Project ID**-t.
-2. **Költségkeret:** *Billing → Budgets & alerts → Create budget*, havi összeg (pl. 10 000 Ft), figyelmeztetés 50 / 90 / 100%-nál.
-   A Google ezzel csak e-mailt küld, nem állít le semmit; a tényleges megállítást a DocMiner havi oldalkorlátja végzi
-   (`DOCMINER_OCR_MONTHLY_PAGE_LIMIT`, alap: 1 000 oldal = a Document AI ingyenes kerete).
+2. **Költségkeret:** *Billing → Budgets & alerts → Create budget*, **Alerts only**, havi összeg (pl. 10 000 Ft),
+   figyelmeztetés 50 / 90 / 100%-nál. A Google leállító korlátja (Spend cap) csak néhány szolgáltatásra és
+   szolgáltatásonként állítható be, a Document AI-ra nem. A tényleges megállítást ezért a DocMiner végzi:
+   - `DOCMINER_OCR_MONTHLY_PAGE_LIMIT` (alap 1 000 oldal = a Document AI ingyenes kerete),
+   - `DOCMINER_LLM_MONTHLY_CALL_LIMIT` (alap 2 000 hívás) és `DOCMINER_LLM_MONTHLY_TOKEN_LIMIT` (alap 5 millió token).
+   Az aktuális felhasználás: `GET /usage`, és a DocMaster Folyamat oldalán.
 3. **API-k:** *APIs & Services → Library*: **Vertex AI API** és **Cloud Document AI API** bekapcsolása.
 4. **OCR-feldolgozó:** *Document AI → Processor gallery → Document OCR → Create*, név `docminer-ocr`, **Region: EU**. Jegyezd fel a **Processor ID**-t.
 5. **Belépés a gépen:** telepítsd a Google Cloud CLI-t, majd:

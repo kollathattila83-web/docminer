@@ -252,6 +252,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "items": items,
         }
 
+    @app.get("/usage")
+    def usage(s=Depends(session)):
+        """A hónap fizetős felhasználása a korlátokhoz képest."""
+        from .budget import UsageGuard, current_month
+        from .pipeline import ocr_pages_used
+
+        month = current_month()
+        calls, tokens = UsageGuard(db, settings).llm_usage(month)
+        return {
+            "month": month,
+            "ocr_pages": {"used": ocr_pages_used(s, month), "limit": settings.ocr_monthly_page_limit},
+            "llm_calls": {"used": calls, "limit": settings.llm_monthly_call_limit},
+            "llm_tokens": {"used": tokens, "limit": settings.llm_monthly_token_limit},
+            "models_file": settings.models_file,
+        }
+
     @app.get("/config/doctypes")
     def doctypes():
         types = load_doctypes(settings.config_dir / "doctypes")

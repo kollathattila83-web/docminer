@@ -11,6 +11,16 @@ a kétes értékeket ember nézi át.
 | **DocMaster** | felület: feltöltés, állapot, átnézés | váz |
 | **DocExplorer** | szereplők összekapcsolása iratokon át | később |
 
+## Indítás Windowson (terminál nélkül)
+
+1. Egyszer: dupla kattintás az `Asztali_ikon_letrehozasa.bat` fájlra. Az asztalon megjelenik egy **DocMiner** ikon.
+2. Utána mindig: dupla kattintás a **DocMiner** ikonra. Elindítja a Docker Desktopot (ha kell) és a DocMinert,
+   majd megnyitja a DocMastert a böngészőben (http://localhost:8501).
+3. Leállítás: `DocMiner_leallitas.bat`. Új változat letöltése: `DocMiner_frissites.bat`.
+
+A DocMaster bal oldalán látszik, hogy próba- vagy éles (Google) módban fut, és a **Kapcsolat ellenőrzése**
+gomb egy apró OCR- és modellhívással ellenőrzi a Google-kapcsolatot.
+
 ## Indítás
 
 ```bash

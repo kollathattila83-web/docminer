@@ -14,12 +14,12 @@ from .providers import OcrPageInput, PageInput, ProviderRequest, call_ocr, call_
 from .settings import get_settings, models_path
 
 
-def main() -> int:
-    settings = get_settings()
+def run_checks(settings=None) -> dict:
+    """Egy apró OCR- és egy modellhívás; az eredményt szótárban adja vissza (a felület is ezt hívja)."""
+    settings = settings or get_settings()
     cfg = load_model_config(models_path(settings))
     reg = default_registry()
-    ok = True
-    print(f"Modellprofil: {settings.models_file}")
+    out: dict = {"models_file": settings.models_file, "ocr": None, "model": None, "ok": True}
 
     doc = pymupdf.open()
     page = doc.new_page(width=595, height=842)
@@ -30,10 +30,10 @@ def main() -> int:
     img_pdf.new_page(width=595, height=842).insert_image(page.rect, pixmap=pix)
     try:
         res = call_ocr("ocr", OcrPageInput(1, 595, 842, img_pdf.tobytes()), cfg, reg)
-        print(f"OCR rendben ({res.provider}/{res.model}): {res.text.strip()!r}")
+        out["ocr"] = {"ok": True, "provider": res.provider, "model": res.model, "text": res.text.strip()}
     except Exception as exc:
-        ok = False
-        print(f"OCR HIBA: {exc}")
+        out["ok"] = False
+        out["ocr"] = {"ok": False, "error": str(exc)}
 
     req = ProviderRequest(
         task="classify",
@@ -43,11 +43,24 @@ def main() -> int:
     )
     try:
         r = call_step("docsorter", req, cfg, reg)
-        print(f"Modell rendben ({r.provider}/{r.model}, {r.model_version}): {r.data}, tokenek: {r.usage}")
+        out["model"] = {"ok": True, "provider": r.provider, "model": r.model, "model_version": r.model_version,
+                        "answer": r.data, "usage": r.usage}
     except Exception as exc:
-        ok = False
-        print(f"MODELL HIBA: {exc}")
-    return 0 if ok else 1
+        out["ok"] = False
+        out["model"] = {"ok": False, "error": str(exc)}
+    return out
+
+
+def main() -> int:
+    r = run_checks()
+    print(f"Modellprofil: {r['models_file']}")
+    o, m = r["ocr"], r["model"]
+    print(f"OCR rendben ({o['provider']}/{o['model']}): {o['text']!r}" if o["ok"] else f"OCR HIBA: {o['error']}")
+    print(
+        f"Modell rendben ({m['provider']}/{m['model']}, {m['model_version']}): {m['answer']}, tokenek: {m['usage']}"
+        if m["ok"] else f"MODELL HIBA: {m['error']}"
+    )
+    return 0 if r["ok"] else 1
 
 
 if __name__ == "__main__":

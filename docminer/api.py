@@ -252,6 +252,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "items": items,
         }
 
+    @app.get("/status")
+    def status():
+        """Beállítási állapot a felületnek: próba- vagy éles mód, Google-azonosítók, belépés."""
+        import os
+        from pathlib import Path
+
+        cred = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        live = settings.models_file != "models.yaml"
+        return {
+            "mode": "google" if live else "proba",
+            "models_file": settings.models_file,
+            "google_project": os.environ.get("GOOGLE_CLOUD_PROJECT") or None,
+            "docai_processor_set": bool(os.environ.get("DOCMINER_DOCAI_PROCESSOR_ID")),
+            "credentials_found": bool(cred and Path(cred).is_file()),
+        }
+
+    @app.post("/status/check")
+    def status_check():
+        """Kapcsolatpróba egy apró OCR- és modellhívással (költsége elhanyagolható)."""
+        from .check_gcp import run_checks
+
+        return run_checks(settings)
+
     @app.get("/usage")
     def usage(s=Depends(session)):
         """A hónap fizetős felhasználása a korlátokhoz képest."""

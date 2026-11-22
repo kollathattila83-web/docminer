@@ -26,6 +26,36 @@ def api(method: str, path: str, **kw):
         st.stop()
 
 
+def status_sidebar():
+    r = api("GET", "/status")
+    if not r.ok:
+        return
+    stt = r.json()
+    st.sidebar.header("Kapcsolat")
+    if stt["mode"] == "proba":
+        st.sidebar.info("Próbamód: nincs Google-hívás, nincs költség.")
+    elif stt["credentials_found"] and stt["google_project"] and stt["docai_processor_set"]:
+        st.sidebar.success(f"Google Cloud (EU): {stt['google_project']}")
+    else:
+        missing = [
+            n for n, ok in [
+                ("belépés (gcloud)", stt["credentials_found"]),
+                ("projekt", stt["google_project"]),
+                ("OCR-feldolgozó", stt["docai_processor_set"]),
+            ] if not ok
+        ]
+        st.sidebar.error("Google Cloud: hiányzik " + ", ".join(missing))
+    if st.sidebar.button("Kapcsolat ellenőrzése"):
+        with st.sidebar.status("Ellenőrzés...", expanded=True) as box:
+            res = api("POST", "/status/check").json()
+            for label, part in (("OCR", res["ocr"]), ("Modell", res["model"])):
+                if part["ok"]:
+                    st.write(f"✅ {label}: {part['provider']} / {part['model']}")
+                else:
+                    st.write(f"❌ {label}: {part['error']}")
+            box.update(label="Minden rendben" if res["ok"] else "Hiba történt", state="complete" if res["ok"] else "error")
+
+
 def upload_sidebar():
     st.sidebar.header("Feltöltés")
     files = st.sidebar.file_uploader(
@@ -223,6 +253,7 @@ def page_documents():
             right.warning("Szkennelt oldal: a szöveget a későbbi OCR-lépés adja (Document AI).")
 
 
+status_sidebar()
 upload_sidebar()
 nav = st.navigation(
     [

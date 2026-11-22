@@ -309,3 +309,11 @@ def test_usage_endpoint(client):
     u = client.get("/usage").json()
     assert u["ocr_pages"] == {"used": 0, "limit": 1000}
     assert u["llm_calls"]["limit"] == 2000 and u["models_file"] == "models.yaml"
+
+
+def test_status_and_check_endpoints(client, monkeypatch):
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    st = client.get("/status").json()
+    assert st["mode"] == "proba" and st["credentials_found"] is False
+    r = client.post("/status/check").json()
+    assert r["ok"] is True and r["ocr"]["provider"] == "fake_ocr" and r["model"]["provider"] == "fake"

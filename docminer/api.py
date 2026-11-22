@@ -5,22 +5,30 @@ Futtatás: uvicorn docminer.api:app
 
 from __future__ import annotations
 
+import json
+
+from pydantic import BaseModel
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from . import __version__
+from . import __version__, docsorter
 from .db import Database
 from .doctypes import load_doctypes
 from .intake import ACCEPTED_MIME, IntakeError, check_file
 from .model_config import load_model_config
-from .models import Document, DocStatus, JobStep, Page, StepStatus
+from .models import Document, DocStatus, JobStep, Page, StepStatus, TypeStatus
 from .pipeline import STAGES, create_steps
 from .settings import Settings, get_settings, models_path
 from .storage import LocalStorage, safe_filename
 
 _CHUNK = 1024 * 1024
+
+
+class TypeDecision(BaseModel):
+    doc_type: str
+    reviewer: str | None = None
 
 
 def _doc_summary(doc: Document) -> dict:
@@ -33,9 +41,22 @@ def _doc_summary(doc: Document) -> dict:
         "page_count": doc.page_count,
         "status": doc.status,
         "error": doc.error,
+        "suggested_type": doc.suggested_type,
+        "suggested_confidence": doc.suggested_confidence,
+        "suggested_reason": doc.suggested_reason,
+        "doc_type": doc.doc_type,
+        "type_status": doc.type_status,
+        "reviewed_by": doc.reviewed_by,
+        "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
         "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
     }
+
+
+def _review_cell(doc: Document) -> str:
+    if doc.type_status in (TypeStatus.APPROVED, TypeStatus.CORRECTED):
+        return StepStatus.DONE
+    return StepStatus.PENDING
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -190,6 +211,68 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         doc.status, doc.error = DocStatus.QUEUED, None
         return _doc_summary(doc)
 
+    # --- Irattípus jóváhagyása (gép javasol, ember dönt) -------------------
+
+    @app.get("/review/doctypes")
+    def review_queue(
+        status: str = Query(TypeStatus.SUGGESTED, description="suggested | approved | corrected"),
+        limit: int = Query(50, le=500),
+        offset: int = 0,
+        s=Depends(session),
+    ):
+        """Jóváhagyásra váró (vagy már eldöntött) iratok, a legbizonytalanabb elöl."""
+        stmt = select(Document).where(Document.type_status == status)
+        total = s.scalar(select(func.count()).select_from(stmt.subquery()))
+        order = (
+            (Document.suggested_confidence.asc(), Document.created_at.asc())
+            if status == TypeStatus.SUGGESTED
+            else (Document.reviewed_at.desc(),)
+        )
+        docs = s.scalars(stmt.order_by(*order).limit(limit).offset(offset)).all()
+        return {
+            "total": total,
+            "choices": docsorter.type_choices(settings.config_dir),
+            "items": [_doc_summary(d) for d in docs],
+        }
+
+    @app.post("/documents/{doc_id}/doctype")
+    def decide_doctype(decision: TypeDecision, doc: Document = Depends(get_doc), s=Depends(session)):
+        """A típus jóváhagyása vagy javítása. Később módosítható; a tanítópélda felülíródik."""
+        if doc.type_status is None:
+            raise HTTPException(409, "Ehhez az irathoz még nincs típusjavaslat.")
+        try:
+            docsorter.review(doc, decision.doc_type, decision.reviewer, docsorter.type_choices(settings.config_dir))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        s.flush()
+        docsorter.save_review(storage, doc, list(doc.pages))
+        return _doc_summary(doc)
+
+    @app.get("/review/doctypes/stats")
+    def review_stats(s=Depends(session)):
+        """A javaslat pontossága az eddigi emberi döntések alapján."""
+        counts = dict(
+            s.execute(
+                select(Document.type_status, func.count())
+                .where(Document.type_status.is_not(None))
+                .group_by(Document.type_status)
+            ).all()
+        )
+        approved, corrected = counts.get(TypeStatus.APPROVED, 0), counts.get(TypeStatus.CORRECTED, 0)
+        decided = approved + corrected
+        return {
+            "suggested": counts.get(TypeStatus.SUGGESTED, 0),
+            "approved": approved,
+            "corrected": corrected,
+            "accuracy": round(approved / decided, 3) if decided else None,
+        }
+
+    @app.get("/training/doctype.jsonl", response_class=PlainTextResponse)
+    def training_export():
+        """A jóváhagyott tanítópéldák egy fájlban (soronként egy JSON)."""
+        rows = [json.loads(storage.get_bytes(k)) for k in storage.list_keys("training/doctype")]
+        return "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows)
+
     @app.get("/pipeline")
     def pipeline_overview(limit: int = Query(200, le=1000), s=Depends(session)):
         """A folyamat áttekintése a DocMaster folyamatnézetéhez: szakaszok, számlálók, iratonkénti állapot."""
@@ -213,10 +296,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ):
                 scanned[doc_id].append(number)
 
+        ts = dict(
+            s.execute(
+                select(Document.type_status, func.count())
+                .where(Document.type_status.is_not(None))
+                .group_by(Document.type_status)
+            ).all()
+        )
+        review_counts = {
+            StepStatus.DONE: ts.get(TypeStatus.APPROVED, 0) + ts.get(TypeStatus.CORRECTED, 0),
+            StepStatus.PENDING: ts.get(TypeStatus.SUGGESTED, 0),
+        }
+
         stages = []
         for stg in STAGES:
             if stg.key == "intake":
                 counts = {StepStatus.DONE: total}
+            elif stg.key == "type_review":
+                counts = review_counts
             elif stg.step:
                 counts = step_counts.get(stg.step, {})
             else:
@@ -238,6 +335,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for stg in STAGES:
                 if stg.key == "intake":
                     cells[stg.key] = {"status": StepStatus.DONE}
+                elif stg.key == "type_review":
+                    cells[stg.key] = {"status": _review_cell(d)}
                 elif stg.step:
                     cells[stg.key] = steps_by_doc[d.id].get(stg.step, {"status": StepStatus.PENDING})
                 else:

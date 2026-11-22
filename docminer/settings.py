@@ -54,6 +54,13 @@ class Settings:
     max_step_attempts: int = field(
         default_factory=lambda: int(os.environ.get("DOCMINER_MAX_STEP_ATTEMPTS", "3"))
     )
+    # A DocSorter-nek ennyi karaktert küldünk oldalanként, és legfeljebb ennyi oldalt.
+    classify_max_pages: int = field(
+        default_factory=lambda: int(os.environ.get("DOCMINER_CLASSIFY_MAX_PAGES", "3"))
+    )
+    classify_chars_per_page: int = field(
+        default_factory=lambda: int(os.environ.get("DOCMINER_CLASSIFY_CHARS_PER_PAGE", "4000"))
+    )
 
 
 def models_path(settings: Settings) -> Path:

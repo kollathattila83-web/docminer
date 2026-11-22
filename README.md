@@ -6,7 +6,7 @@ a kétes értékeket ember nézi át.
 
 | Modul | Feladat | Állapot |
 |---|---|---|
-| **DocSorter** | irattípus felismerése, metaadat-csoportok kiválasztása | 2. lépés |
+| **DocSorter** | irattípus felismerése, metaadat-csoportok kiválasztása | javaslat + emberi jóváhagyás kész (próbamodellel) |
 | **DocMiner** | befogadás, felmérés, szöveg és táblák, képi részek, összerendelés, ellenőrzés | 1. lépés: befogadás + szöveg kész |
 | **DocMaster** | felület: feltöltés, állapot, átnézés | váz |
 | **DocExplorer** | szereplők összekapcsolása iratokon át | később |
@@ -74,6 +74,20 @@ pytest                                   # tesztek
 - **Profilváltás egy sorral:** `DOCMINER_MODELS_FILE=models.google.yaml` (valódi) vagy `models.yaml` (próba).
 - Beállítás lépésenként és a kapcsolat ellenőrzése: [docs/GOOGLE_CLOUD.md](docs/GOOGLE_CLOUD.md).
 
+## Irattípus: a gép javasol, ember dönt
+
+- **Besorolás (`classify` lépés):** a DocSorter a szövegkinyerés után javasol egy típust a
+  `config/doctypes/` típusai közül (vagy „egyéb”), 0–1 közötti bizonyossággal és rövid indoklással.
+  Az OCR után fut, így a szkennelt oldal szövegét is látja. A modell az aktív profil
+  (`DOCMINER_MODELS_FILE`) `docsorter` sorából jön: a próbaprofilban (`models.yaml`) mindig „egyéb, 0%”,
+  a Google-profilban (`models.google.yaml`) a Gemini javasol.
+- **Jóváhagyás (DocMaster → Jóváhagyás oldal):** a legbizonytalanabb irat elöl; oldalkép, szöveg,
+  javaslat. Az ember elfogadja vagy javítja; a döntés utólag az Iratok oldalon módosítható.
+  A javaslat és a döntés külön mezőben marad, így mérhető a pontosság (`GET /review/doctypes/stats`).
+- **Tanítópéldák:** minden döntés `training/doctype/<id>.json` fájlba kerül (szöveg + címke),
+  egyben letölthető: `GET /training/doctype.jsonl`. Ebből később saját osztályozó tanítható.
+  A szöveg személyes adatot tartalmazhat: továbbadás előtt anonimizálni kell.
+
 ## Következő lépések
 
 1. Google Cloud (EU): Document AI OCR-adapter a szkennelt oldalakra, Gemini 3.8 Flash adapter (Vertex AI EU).
@@ -92,6 +106,10 @@ pytest                                   # tesztek
 | `GET /documents/{id}/pages/{n}/text` · `/layout` · `/image` | oldal szövege, koordinátái, képe |
 | `GET /documents/{id}/manifest` · `/original` | AI-ready csomag, eredeti fájl |
 | `POST /documents/{id}/retry` | hibás irat újraindítása |
+| `GET /review/doctypes?status=` | típusjóváhagyásra váró (vagy eldöntött) iratok, választható típusok |
+| `POST /documents/{id}/doctype` | típus elfogadása vagy javítása (`{"doc_type": "...", "reviewer": "..."}`) |
+| `GET /review/doctypes/stats` | elfogadott / javított darabszám, a javaslat pontossága |
+| `GET /training/doctype.jsonl` | jóváhagyott tanítópéldák |
 | `GET /pipeline` | folyamat-áttekintés: szakaszok, számlálók, iratonkénti lépésállapot |
 | `GET /config/doctypes` · `/config/models` | beállítások |
 

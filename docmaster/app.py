@@ -1,8 +1,8 @@
 """DocMaster – egyszerű felület a DocMiner fölött.
 
 Csak a DocMiner REST API-t használja, így később lecserélhető.
-Oldalak: Folyamat (élő áttekintés), Iratok (feltöltés, oldalak szövege és képe).
-A kétes értékek jóváhagyása az 5. lépésben jön.
+Oldalak: Folyamat (élő áttekintés), Jóváhagyás (irattípus elfogadása vagy javítása),
+Iratok (feltöltés, oldalak szövege és képe). A kétes mezőértékek jóváhagyása később jön.
 """
 
 import html
@@ -195,6 +195,117 @@ def page_pipeline():
     _live()
 
 
+# --- Jóváhagyás ---------------------------------------------------------------
+
+TYPE_STATUS_HU = {"suggested": "jóváhagyásra vár", "approved": "elfogadva", "corrected": "javítva"}
+
+
+def _conf_label(c) -> str:
+    if c is None:
+        return "–"
+    level = "magas" if c >= 0.85 else "közepes" if c >= 0.6 else "alacsony"
+    return f"{round(c * 100)}% ({level})"
+
+
+def page_review():
+    st.title("Irattípus jóváhagyása")
+    st.caption("A gép javasol, ember dönt. Minden döntésből tanítópélda lesz.")
+
+    stats = api("GET", "/review/doctypes/stats").json()
+    m = st.columns(4)
+    m[0].metric("Jóváhagyásra vár", stats["suggested"])
+    m[1].metric("Elfogadva", stats["approved"])
+    m[2].metric("Javítva", stats["corrected"])
+    m[3].metric("Javaslat pontossága", f"{round(stats['accuracy'] * 100)}%" if stats["accuracy"] is not None else "–")
+
+    reviewer = st.text_input("Ki dönt? (név, opcionális)", key="reviewer")
+    queue = api("GET", "/review/doctypes", params={"limit": 200}).json()
+    choices: dict = queue["choices"]
+
+    if not queue["items"]:
+        st.success("Nincs jóváhagyásra váró irat.")
+    else:
+        st.subheader(f"Jóváhagyásra vár ({queue['total']}) – a legbizonytalanabb elöl")
+        names = {d["id"]: f"{d['filename']} · {choices.get(d['suggested_type'], d['suggested_type'])} · {_conf_label(d['suggested_confidence'])}" for d in queue["items"]}
+        doc_id = st.selectbox("Irat", options=list(names), format_func=names.get)
+        doc = next(d for d in queue["items"] if d["id"] == doc_id)
+        detail = api("GET", f"/documents/{doc_id}").json()
+
+        left, right = st.columns([3, 2])
+        with right:
+            st.markdown(f"**Javasolt típus:** {choices.get(doc['suggested_type'], doc['suggested_type'])}")
+            st.markdown(f"**Bizonyosság:** {_conf_label(doc['suggested_confidence'])}")
+            if doc["suggested_reason"]:
+                st.markdown(f"**Indoklás:** {doc['suggested_reason']}")
+            keys = list(choices)
+            default = keys.index(doc["suggested_type"]) if doc["suggested_type"] in keys else 0
+            picked = st.radio("Típus", options=keys, index=default, format_func=choices.get, key=f"pick-{doc_id}")
+            label = "Elfogadom" if picked == doc["suggested_type"] else "Javítom erre"
+            if st.button(label, type="primary", key=f"save-{doc_id}"):
+                r = api("POST", f"/documents/{doc_id}/doctype", json={"doc_type": picked, "reviewer": reviewer or None})
+                if r.ok:
+                    st.toast(f"{doc['filename']}: {choices[picked]} ({TYPE_STATUS_HU[r.json()['type_status']]})")
+                    st.rerun()
+                else:
+                    st.error(r.json().get("detail", r.text))
+        with left:
+            pages = detail["pages"]
+            if pages:
+                n = int(st.number_input("Oldal", min_value=1, max_value=len(pages), value=1, key=f"page-{doc_id}"))
+                img = api("GET", f"/documents/{doc_id}/pages/{n}/image")
+                if img.ok:
+                    st.image(img.content, caption=f"{n}. / {len(pages)} oldal")
+                txt = api("GET", f"/documents/{doc_id}/pages/{n}/text")
+                with st.expander("Kinyert szöveg"):
+                    st.text(txt.text if txt.ok and txt.text.strip() else "(nincs szövegréteg, OCR-re vár)")
+
+    with st.expander("Korábbi döntések (módosíthatók az Iratok oldalon)"):
+        done = []
+        for status in ("approved", "corrected"):
+            done += api("GET", "/review/doctypes", params={"status": status, "limit": 100}).json()["items"]
+        if done:
+            st.dataframe(
+                [
+                    {
+                        "Fájl": d["filename"],
+                        "Típus": choices.get(d["doc_type"], d["doc_type"]),
+                        "Javaslat": choices.get(d["suggested_type"], d["suggested_type"]),
+                        "Állapot": TYPE_STATUS_HU.get(d["type_status"], d["type_status"]),
+                        "Döntött": d["reviewed_by"] or "",
+                    }
+                    for d in done
+                ],
+                hide_index=True,
+                use_container_width=True,
+            )
+            st.download_button(
+                "Tanítópéldák letöltése (JSONL)",
+                data=api("GET", "/training/doctype.jsonl").content,
+                file_name="doctype_training.jsonl",
+                mime="application/jsonl",
+            )
+        else:
+            st.write("Még nincs döntés.")
+
+
+def doctype_editor(detail: dict, doc_id: str):
+    """Iratok oldal: a már eldöntött típus utólagos módosítása."""
+    if not detail.get("type_status"):
+        return
+    choices = api("GET", "/review/doctypes", params={"limit": 1}).json()["choices"]
+    current = detail["doc_type"] or detail["suggested_type"]
+    st.write(
+        f"**Irattípus:** {choices.get(current, current)} "
+        f"({TYPE_STATUS_HU.get(detail['type_status'], detail['type_status'])})"
+    )
+    keys = list(choices)
+    c1, c2 = st.columns([3, 1])
+    picked = c1.selectbox("Típus módosítása", keys, index=keys.index(current) if current in keys else 0, format_func=choices.get, key=f"edit-{doc_id}")
+    if c2.button("Mentés", key=f"edit-save-{doc_id}"):
+        api("POST", f"/documents/{doc_id}/doctype", json={"doc_type": picked, "reviewer": st.session_state.get("reviewer") or None})
+        st.rerun()
+
+
 # --- Iratok -----------------------------------------------------------------
 
 
@@ -229,6 +340,8 @@ def page_documents():
     choice = st.selectbox("Irat megnyitása", options=list(names), format_func=names.get)
     detail = api("GET", f"/documents/{choice}").json()
 
+    doctype_editor(detail, choice)
+
     st.write("**Lépések**")
     st.table(
         [
@@ -258,6 +371,7 @@ upload_sidebar()
 nav = st.navigation(
     [
         st.Page(page_pipeline, title="Folyamat", icon="🔄", default=True),
+        st.Page(page_review, title="Jóváhagyás", icon="✔️", url_path="jovahagyas"),
         st.Page(page_documents, title="Iratok", icon="📄", url_path="iratok"),
     ]
 )

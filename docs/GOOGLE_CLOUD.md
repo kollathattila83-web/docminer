@@ -38,5 +38,9 @@ Kulcsfájl vagy jelszó sehová nem kell: a programok a gépeden lévő
 A digitális PDF szövege nem megy ki: azt a PyMuPDF helyben olvassa. A próbaprofilra
 (`DOCMINER_MODELS_FILE=models.yaml`) visszaváltva semmi nem megy ki és nincs költség.
 
-Ellenőrizendő az első éles futáskor: elérhető-e a `gemini-3.8-flash` az `eu` végponton.
-Ha nem, a `config/models.google.yaml`-ban a `location` egy EU-régióra (pl. `europe-west4`) írható át.
+Élesben ellenőrizve (2026-11-22, Windows + Docker Desktop): a Document AI OCR az `eu` helyszínen és a
+`gemini-3.8-flash` a Vertex AI `eu` végpontján is működik. Ha egy későbbi modell nem érhető el az `eu`
+végponton, a `config/models.google.yaml`-ban a `location` egy EU-régióra (pl. `europe-west4`) írható át.
+
+Windows-megjegyzés: a `GCLOUD_CONFIG_DIR` szóközt tartalmazó felhasználónévvel is működik
+(pl. `C:/Users/Kogatel BT/AppData/Roaming/gcloud`), idézőjel nélkül.

@@ -1,0 +1,41 @@
+# Valódi szolgáltatók profilja (Google Cloud, EU). Bekapcsolás a .env-ben:
+#   DOCMINER_MODELS_FILE=models.google.yaml
+# Kell hozzá: GOOGLE_CLOUD_PROJECT, DOCMINER_DOCAI_PROCESSOR_ID és a gépen
+# `gcloud auth application-default login` (kulcsfájl nem kell).
+#
+# A még meg nem írt lépések (képi részek, második olvasó) a próbaszolgáltatón maradnak.
+
+max_retries: 1
+
+steps:
+  docsorter:
+    provider: vertex_gemini
+    model: gemini-3.8-flash
+    location: eu            # Vertex AI EU több-régiós végpont (aiplatform.eu.rep.googleapis.com)
+    reasoning: low
+    params:
+      send_images: false    # csak szöveg; a szkennelt oldal szövegét az OCR adja
+      max_output_tokens: 1024
+
+  ocr:
+    provider: document_ai
+    model: document-ocr
+    location: eu            # Document AI EU-helyszín (eu-documentai.googleapis.com)
+
+  extraction:
+    provider: vertex_gemini
+    model: gemini-3.8-flash
+    location: eu
+    reasoning: medium
+
+  visual:
+    provider: fake
+    model: fake-vision
+
+  second_reader:
+    provider: fake
+    model: fake-reader-2
+
+  doubt_checker:
+    provider: fake
+    model: fake-checker

@@ -1,0 +1,47 @@
+# Lépésenkénti modellbeállítás. A modell beállítás, nem kód: cseréje egy sor.
+# Csere előtt az aranymintán (30–50 ellenőrzött saját irat) mérjük a pontosságot,
+# az oldalankénti költséget és az időt.
+#
+# Ez a próbaprofil: minden lépés hamis ("fake") szolgáltatót használ, nincs hálózat, nincs költség.
+# A valódi szolgáltatók profilja: models.google.yaml (bekapcsolás: DOCMINER_MODELS_FILE=models.google.yaml).
+# Később, példák:
+#   provider: vertex_gemini   model: gemini-3.8-flash   location: eu
+#   provider: document_ai     model: ocr                location: eu
+#   provider: anthropic       model: claude-haiku-5-5
+#   provider: anthropic       model: claude-sonnet-5-5
+
+max_retries: 1   # érvénytelen kimenetnél ennyi újrapróbálás, utána tartalékmodell
+
+steps:
+  docsorter:        # irattípus-felismerés és metaadat-csoportok kiválasztása
+    provider: fake
+    model: fake-sorter
+    reasoning: low
+    fallback:
+      provider: fake
+      model: fake-sorter-backup
+
+  ocr:              # szkennelt oldalak szövege (Document AI)
+    provider: fake_ocr
+    model: fake-ocr
+
+  extraction:       # mezőkinyerés a típus YAML-ja szerint
+    provider: fake
+    model: fake-extractor
+    reasoning: medium
+    fallback:
+      provider: fake
+      model: fake-extractor-backup
+
+  visual:           # aláírás, bélyegző, kézírás jelenléte és helye
+    provider: fake
+    model: fake-vision
+
+  second_reader:    # független második olvasás
+    provider: fake
+    model: fake-reader-2
+
+  doubt_checker:    # kétes oldalak erősebb modellel
+    provider: fake
+    model: fake-checker
+    reasoning: high

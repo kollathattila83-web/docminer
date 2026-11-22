@@ -1,0 +1,26 @@
+# Számla mezőlistája (kiinduló javaslat). Új mező: új sor, kód nem kell.
+# verify: true = csalási pont, mindig második ellenőrzést kap (törzsadat vagy hiteles forrás).
+id: szamla
+name: Számla
+description: Kimenő vagy bejövő számla, 1–2 oldal jellemzően.
+version: 1
+fields:
+  - {key: szamlaszam, label: Számlaszám, type: string, required: true}
+  - {key: kelte, label: Számla kelte, type: date, required: true}
+  - {key: teljesites_datuma, label: Teljesítés dátuma, type: date}
+  - {key: fizetesi_hatarido, label: Fizetési határidő, type: date}
+  - {key: elado_nev, label: Eladó neve, type: string, required: true}
+  - {key: elado_adoszam, label: Eladó adószáma, type: tax_id, verify: true}
+  - {key: vevo_nev, label: Vevő neve, type: string, required: true}
+  - {key: vevo_adoszam, label: Vevő adószáma, type: tax_id, verify: true}
+  - {key: netto, label: Nettó összeg, type: money}
+  - {key: afa, label: ÁFA összeg, type: money}
+  - {key: brutto, label: Bruttó összeg, type: money, required: true}
+  - {key: penznem, label: Pénznem, type: string, description: "ISO 4217 kód, pl. HUF, EUR"}
+  - key: fizetesi_mod
+    label: Fizetési mód
+    type: enum
+    values: [atutalas, keszpenz, bankkartya, utanvet, egyeb]
+  - {key: bankszamlaszam, label: Eladó bankszámlaszáma, type: iban, verify: true}
+visual_elements:
+  - {key: belyegzo, label: Bélyegző}

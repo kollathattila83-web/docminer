@@ -1,0 +1,21 @@
+# Meghatalmazás mezőlistája (kiinduló javaslat).
+id: meghatalmazas
+name: Meghatalmazás
+description: Meghatalmazás, jellemzően két tanúval.
+version: 1
+fields:
+  - {key: meghatalmazo, label: Meghatalmazó, type: party, required: true}
+  - {key: meghatalmazott, label: Meghatalmazott, type: party, required: true}
+  - {key: targya, label: Tárgya és jogköre, type: text, required: true}
+  - {key: ervenyesseg, label: Érvényesség, type: string, description: "dátum, időtartam vagy visszavonásig"}
+  - {key: kelte, label: Kelte, type: date}
+  - {key: kelt_helye, label: Kelt helye, type: string}
+  - key: tanuk
+    label: Tanúk
+    type: party
+    multiple: true
+    description: Tanúk neve és lakcíme (address mező).
+visual_elements:
+  - {key: alairas, label: Aláírás, per_party: true}
+  - {key: tanu_alairas, label: Tanúaláírás}
+  - {key: belyegzo, label: Bélyegző}

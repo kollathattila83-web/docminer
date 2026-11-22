@@ -1,0 +1,27 @@
+# Szerződés mezőlistája (kiinduló javaslat).
+id: szerzodes
+name: Szerződés
+description: Kétoldalú vagy többoldalú szerződés, akár több tíz oldal.
+version: 1
+fields:
+  - {key: tipusa, label: Szerződés típusa, type: string, required: true, description: "pl. vállalkozási, bérleti, adásvételi"}
+  - {key: targya, label: Szerződés tárgya, type: text, required: true}
+  - key: felek
+    label: Felek
+    type: party
+    multiple: true
+    required: true
+    description: Név, adószám vagy cégjegyzékszám, képviselő; felenként egy elem.
+  - {key: kelte, label: Kelte, type: date}
+  - {key: kelt_helye, label: Kelt helye, type: string}
+  - {key: hataly_kezdete, label: Hatály kezdete, type: date}
+  - {key: hataly_vege, label: Hatály vége, type: date, description: "null, ha határozatlan"}
+  - {key: felmondasi_ido, label: Felmondási idő, type: string}
+  - {key: ellenertek, label: Ellenérték, type: money}
+  - {key: penznem, label: Pénznem, type: string}
+  - {key: fizetesi_feltetelek, label: Fizetési feltételek, type: text}
+visual_elements:
+  - {key: alairas, label: Aláírás, per_party: true}
+  - {key: belyegzo, label: Bélyegző}
+  - {key: kezirasos_kiegeszites, label: Kézzel írt kiegészítés}
+  - {key: szigno, label: Szignó, per_page: true}
